@@ -369,3 +369,31 @@ Developer docs: **[DEV_NOTES.md](DEV_NOTES.md)** (adding screens/endpoints, DTOs
 - **No test sources are committed** in this workspace (`app/src` contains `main` only), although the
   test dependencies are declared — see DEV_NOTES.md.
 - `./gradlew` and the Gradle wrapper are not part of this workspace (see above).
+
+## License
+
+Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for the full text.
+
+```
+Copyright 2026 Radu Ichim
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+Apache-2.0 was chosen over MIT for its explicit patent grant, which is the
+convention across the Android/AndroidX ecosystem this app builds on. Third-party
+dependencies (AndroidX, Compose, Kotlin, Retrofit, OkHttp, kotlinx, Robolectric,
+JUnit) remain under their own respective licenses.
+
+`GitHub`, `GitHub API` and the GitHub logo are trademarks of GitHub, Inc. This
+project is not affiliated with or endorsed by GitHub.
