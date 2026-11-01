@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Git Dashboard</string>
+
+    <!-- Token / onboarding / settings -->
+    <string name="token_title">GitHub access</string>
+    <string name="token_settings_title">Settings</string>
+    <string name="token_headline">Connect your GitHub account</string>
+    <string name="token_subtitle">Paste a GitHub personal access token. The token is stored encrypted on this device and never leaves it except as the Authorization header sent to api.github.com.</string>
+    <string name="token_label">Personal access token</string>
+    <string name="token_placeholder">github_pat_… or ghp_…</string>
+    <string name="token_verify">Verify token</string>
+    <string name="token_verifying">Verifying…</string>
+    <string name="token_verified_as">Verified as %1$s</string>
+    <string name="token_continue">Continue to repositories</string>
+    <string name="token_saved_state">A token is saved on this device (%1$s).</string>
+    <string name="token_sign_out">Remove saved token</string>
+    <string name="token_no_saved">No token saved yet.</string>
+    <string name="token_scopes_hint">Needs the “repo” scope for private repositories; public read access is enough for public ones.</string>
+    <string name="token_storage_unavailable">Secure storage is unavailable on this device, so the token cannot be saved.</string>
+
+    <!-- Repository list -->
+    <string name="repos_title">Repositories</string>
+    <string name="repos_search_hint">Filter by name</string>
+    <string name="repos_search_clear">Clear filter</string>
+    <string name="repos_empty_title">No repositories found</string>
+    <string name="repos_empty_body">This account has no repositories the token can see.</string>
+    <string name="repos_no_matches">No repository matches “%1$s”.</string>
+    <string name="repos_load_more">Load more</string>
+    <string name="repos_loading_more">Loading more…</string>
+    <string name="repos_private">Private</string>
+    <string name="repos_updated">Updated %1$s</string>
+    <string name="repos_stars">%1$d</string>
+    <string name="repos_unknown_language">Unknown</string>
+
+    <!-- Repository detail -->
+    <string name="repo_detail_fork">Fork</string>
+    <string name="repo_detail_archived">Archived</string>
+    <string name="repo_detail_no_description">No description</string>
+    <string name="repo_detail_default_branch">Default branch</string>
+    <string name="repo_detail_language">Language</string>
+    <string name="repo_detail_updated">Updated</string>
+    <string name="repo_detail_browse">Browse files</string>
+    <string name="repo_detail_stars">Stars</string>
+    <string name="repo_detail_forks">Forks</string>
+    <string name="repo_detail_watchers">Watchers</string>
+    <string name="repo_detail_public">Public</string>
+    <string name="repo_detail_internal">Internal</string>
+    <string name="repo_detail_private">Private</string>
+
+    <!-- Shared actions / states -->
+    <string name="action_retry">Retry</string>
+    <string name="action_open_github">Open on GitHub</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_back">Back</string>
+    <string name="state_loading">Loading…</string>
+    <string name="error_title">Something went wrong</string>
+    <string name="error_unauthorized">GitHub rejected the token. Please enter a valid personal access token.</string>
+    <string name="error_rate_limited">GitHub rate limit exceeded. Please wait a moment and retry.</string>
+    <string name="error_rate_limited_until">GitHub rate limit exceeded. It resets at %1$s.</string>
+    <string name="error_forbidden">This token is not allowed to access the requested data.</string>
+    <string name="error_not_found">The requested GitHub resource was not found.</string>
+    <string name="error_http">GitHub returned HTTP %1$d.</string>
+    <string name="error_network">Network error. Check your connection and retry.</string>
+    <string name="error_unexpected_response">Unexpected response from GitHub.</string>
+    <string name="error_unknown">Unexpected error.</string>
+</resources>
