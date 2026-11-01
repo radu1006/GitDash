@@ -70,17 +70,13 @@ You also need:
 
 This compiles the debug variant and installs it on the one connected device/emulator.
 
-**Not verified here.** This workspace has **no Gradle wrapper** — there is no `gradlew`,
-no `gradlew.bat` and no `gradle/wrapper/gradle-wrapper.jar` (checked with `ls`/`find`) — and the
-machine has no JDK, Gradle, Android SDK or `adb` installed (`java`, `gradle`, `adb` all report
-"not found"). So `./gradlew installDebug` has not been executed in this environment. See
-[Troubleshooting](#troubleshooting) → *"gradlew: not found" / wrapper jar missing*.
-
-If your checkout *does* have the wrapper (a normal clone does), the equivalent explicit tasks are:
+The Gradle wrapper **is committed** — `gradlew`, `gradlew.bat`,
+`gradle/wrapper/gradle-wrapper.jar` and `gradle-wrapper.properties` (pinned to Gradle 8.9) — so a
+fresh clone needs only a JDK 17+ and an Android SDK, not a local Gradle install.
 
 ```sh
-./gradlew :app:assembleDebug      # build only, not verified here
-./gradlew :app:installDebug       # build + install, not verified here
+./gradlew :app:assembleDebug      # verified: BUILD SUCCESSFUL (Linux, JDK 17, SDK 35)
+./gradlew :app:installDebug       # not verified (needs a connected device/emulator + adb)
 ```
 
 ### Install onto a physical device with adb
@@ -91,8 +87,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 - `adb` ships with the Android SDK platform-tools; with a default Android Studio install on Linux it
-  is at `~/Android/Sdk/platform-tools/adb`. **Not verified here** (`adb` is not installed and there
-  is no SDK directory in this environment).
+  is at `~/Android/Sdk/platform-tools/adb`. **Not verified here** — `platform-tools` is installed in
+  the build environment, but no device or emulator was ever connected, so the install step has not
+  been exercised.
 - The APK output path is real: `app/build/outputs/apk/debug/app-debug.apk` exists in this workspace.
 - Over Wi-Fi: *Developer options → Wireless debugging* on the phone, then
   `adb pair <ip>:<port>` followed by `adb connect <ip>:<port>`. **Not verified here.**
@@ -118,7 +115,8 @@ Creating `local.properties`:
 printf 'sdk.dir=%s\n' "$HOME/Android/Sdk" > local.properties
 ```
 
-**Not verified here** (no SDK installed, and no build has been run in this environment).
+Verified: with `ANDROID_HOME` pointed at a Platform 35 SDK, `./gradlew :app:assembleDebug`
+completes successfully and writes `app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
@@ -300,8 +298,8 @@ clock time.
 | *"GitHub rate limit exceeded. It resets at 14:32."* (or the variant without a time) | HTTP 403 with `X-RateLimit-Remaining: 0`, or HTTP 429 (secondary limit) | Wait until the reset time shown (device local time, from `X-RateLimit-Reset`). Authenticated requests typically allow 5,000/hour; the app makes one call per screen/refresh, but repeated **Refresh** taps still count. If no time is shown, GitHub sent no reset header — wait a minute and retry. |
 | *"Network error. Check your connection and retry."* | Airplane mode, no Wi-Fi/cellular, captive portal, DNS/TLS failure, or a timeout | Restore connectivity and retry. The client uses 15 s connect, 30 s read/write and 45 s call timeouts, so a stalled connection surfaces as this error rather than hanging. Emulators on a VPN host sometimes lose `api.github.com`; check the emulator's browser. |
 | *"Secure storage is unavailable on this device, so the token cannot be saved."* | The Keystore-backed preferences could not be created (e.g. an invalidated keystore entry, some rooted/custom ROMs) | There is no plaintext fallback by design. Clear the app's data or reinstall the app to recreate the master key and try again. |
-| Build: *"SDK location not found"* / *"Failed to install the following Android SDK packages"* | No `ANDROID_HOME`, no `local.properties`, or platform 35 / build-tools missing | Install **Android SDK Platform 35** in the SDK Manager, then set `ANDROID_HOME` or add `sdk.dir=…` to `local.properties` (see above). **Not verified here.** |
-| Build: `./gradlew: No such file or directory`, or *"Could not find or load main class org.gradle.wrapper.GradleWrapperMain"* (wrapper jar missing) | The Gradle wrapper is not committed in this workspace — `gradlew` and `gradle/wrapper/gradle-wrapper.jar` are both absent | Open the project in Android Studio (it uses its bundled Gradle) **or** regenerate the wrapper with a local Gradle 8.9: `gradle wrapper --gradle-version 8.9`, then `./gradlew installDebug`. Both are **not verified here** (no Gradle/JDK installed). |
+| Build: *"SDK location not found"* / *"Failed to install the following Android SDK packages"* | No `ANDROID_HOME`, no `local.properties`, or platform 35 / build-tools missing | Install **Android SDK Platform 35** and **Build-Tools 35.0.0**, then set `ANDROID_HOME` or add `sdk.dir=…` to `local.properties` (see above). |
+| Build: `./gradlew: No such file or directory`, or *"Could not find or load main class org.gradle.wrapper.GradleWrapperMain"* (wrapper jar missing) | The wrapper files were deleted, or the checkout came from an archive that dropped them | Restore them from version control (`git checkout -- gradlew gradlew.bat gradle/wrapper`), or regenerate with any local Gradle 8.9: `gradle wrapper --gradle-version 8.9`. The wrapper jar is committed and must stay tracked. |
 | Build fails with an unsupported class file / language level error | Gradle picked a JDK other than 17 | Set *Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK* to **17**, or `JAVA_HOME` to a JDK 17 for CLI builds. |
 | **Browse files** on the detail screen does nothing | Known limitation: the button's `onBrowse` callback has no destination in the navigation graph in this workspace | Use **Open on GitHub** for now; see [Known limitations](#known-limitations). |
 
@@ -368,7 +366,6 @@ Developer docs: **[DEV_NOTES.md](DEV_NOTES.md)** (adding screens/endpoints, DTOs
 - **Repository filter is client-side** over already loaded pages, not a GitHub code/repo search.
 - **No test sources are committed** in this workspace (`app/src` contains `main` only), although the
   test dependencies are declared — see DEV_NOTES.md.
-- `./gradlew` and the Gradle wrapper are not part of this workspace (see above).
 
 ## License
 

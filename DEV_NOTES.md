@@ -189,14 +189,16 @@ Start with the network layer, which is designed for it:
 ### Commands
 
 ```sh
-./gradlew :app:testDebugUnitTest          # JVM unit tests        (not verified here)
-./gradlew :app:test                       # all unit test variants (not verified here)
-./gradlew :app:connectedDebugAndroidTest  # instrumented tests     (not verified here)
+./gradlew :app:testDebugUnitTest          # JVM unit tests         (no test sources yet)
+./gradlew :app:test                       # all unit test variants (no test sources yet)
+./gradlew :app:connectedDebugAndroidTest  # instrumented tests     (not verified)
 ```
 
-**"Not verified here":** this workspace has no Gradle wrapper (`gradlew` and
-`gradle/wrapper/gradle-wrapper.jar` are absent) and the machine has no JDK/Gradle/Android SDK, so no
-test task could be executed. Android Studio's green gutter arrows work regardless of the wrapper.
+The Gradle wrapper **is committed** (`gradlew`, `gradlew.bat`,
+`gradle/wrapper/gradle-wrapper.jar`, Gradle 8.9), so these tasks run from a plain clone with a
+JDK 17+ and an Android SDK. Only `:app:assembleDebug` has actually been executed here
+(**BUILD SUCCESSFUL**, Linux/JDK 17/SDK 35); no test task has been run, because `app/src` contains
+no test sources. Android Studio's green gutter arrows work regardless of the wrapper.
 
 Two caveats before relying on `connectedDebugAndroidTest`:
 
