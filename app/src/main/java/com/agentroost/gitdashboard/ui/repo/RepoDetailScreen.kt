@@ -1,5 +1,6 @@
 package com.agentroost.gitdashboard.ui.repo
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +48,7 @@ import com.agentroost.gitdashboard.domain.model.Repository
 import com.agentroost.gitdashboard.ui.components.ErrorPane
 import com.agentroost.gitdashboard.ui.components.LoadingPane
 import com.agentroost.gitdashboard.ui.components.OpenOnGitHubButton
+import com.agentroost.gitdashboard.ui.components.SectionCard
 import com.agentroost.gitdashboard.ui.components.apiErrorMessage
 import com.agentroost.gitdashboard.util.formatCount
 import com.agentroost.gitdashboard.util.relativeTime
@@ -61,6 +65,7 @@ fun RepoDetailScreen(
     repo: String,
     onBack: () -> Unit,
     onBrowse: (Repository) -> Unit,
+    onViewReadme: () -> Unit,
     onAuthRequired: () -> Unit,
     viewModel: RepoDetailViewModel = viewModel(
         factory = RepoDetailViewModel.factory(container, owner, repo),
@@ -116,6 +121,7 @@ fun RepoDetailScreen(
                 is RepoDetailUiState.Content -> RepoDetailContent(
                     state = current,
                     onBrowse = { onBrowse(current.repository) },
+                    onViewReadme = onViewReadme,
                 )
             }
         }
@@ -126,6 +132,7 @@ fun RepoDetailScreen(
 private fun RepoDetailContent(
     state: RepoDetailUiState.Content,
     onBrowse: () -> Unit,
+    onViewReadme: () -> Unit,
 ) {
     val repository = state.repository
 
@@ -136,34 +143,64 @@ private fun RepoDetailContent(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = repository.name,
-            style = MaterialTheme.typography.headlineSmall,
-        )
+        SectionCard(modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = repository.initials,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = repository.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = repository.owner,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Badge(text = visibilityLabel(repository))
+                if (repository.isFork) {
+                    Spacer(Modifier.width(6.dp))
+                    Badge(text = stringResource(R.string.repo_detail_fork))
+                }
+                if (repository.isArchived) {
+                    Spacer(Modifier.width(6.dp))
+                    Badge(
+                        text = stringResource(R.string.repo_detail_archived),
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             Text(
-                text = repository.owner,
+                text = repository.description?.takeIf { it.isNotBlank() }
+                    ?: stringResource(R.string.repo_detail_no_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.width(8.dp))
-            Badge(text = visibilityLabel(repository))
-            if (repository.isFork) {
-                Spacer(Modifier.width(6.dp))
-                Badge(text = stringResource(R.string.repo_detail_fork))
-            }
-            if (repository.isArchived) {
-                Spacer(Modifier.width(6.dp))
-                Badge(text = stringResource(R.string.repo_detail_archived))
-            }
         }
-
-        Text(
-            text = repository.description?.takeIf { it.isNotBlank() }
-                ?: stringResource(R.string.repo_detail_no_description),
-            style = MaterialTheme.typography.bodyMedium,
-        )
 
         if (state.isRefreshing) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -185,28 +222,41 @@ private fun RepoDetailContent(
 
         StatGrid(repository)
 
-        InfoRow(
-            label = stringResource(R.string.repo_detail_default_branch),
-            value = repository.defaultBranch,
-        )
-        InfoRow(
-            label = stringResource(R.string.repo_detail_language),
-            value = repository.language ?: stringResource(R.string.repos_unknown_language),
-        )
-        InfoRow(
-            label = stringResource(R.string.repo_detail_updated),
-            value = relativeTime(repository.updatedAt),
-        )
+        SectionCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                InfoRow(
+                    label = stringResource(R.string.repo_detail_default_branch),
+                    value = repository.defaultBranch,
+                )
+                InfoRow(
+                    label = stringResource(R.string.repo_detail_language),
+                    value = repository.language ?: stringResource(R.string.repos_unknown_language),
+                )
+                InfoRow(
+                    label = stringResource(R.string.repo_detail_updated),
+                    value = relativeTime(repository.updatedAt),
+                )
+            }
+        }
 
         Spacer(Modifier.height(4.dp))
 
-        Button(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.repo_detail_browse))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(onClick = onBrowse, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.repo_detail_browse))
+            }
+            OutlinedButton(onClick = onViewReadme, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.repo_detail_readme))
+            }
         }
 
         OpenOnGitHubButton(
             url = repository.htmlUrl,
             modifier = Modifier.fillMaxWidth(),
+            outlined = true,
         )
     }
 }
@@ -241,18 +291,26 @@ private fun StatTile(
     value: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .padding(vertical = 10.dp, horizontal = 12.dp),
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 0.dp,
     ) {
-        Text(text = value, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(modifier = Modifier.padding(vertical = 14.dp, horizontal = 14.dp)) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -270,22 +328,27 @@ private fun InfoRow(label: String, value: String) {
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }
 
 @Composable
-private fun Badge(text: String) {
+private fun Badge(
+    text: String,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(containerColor)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = contentColor,
         )
     }
 }

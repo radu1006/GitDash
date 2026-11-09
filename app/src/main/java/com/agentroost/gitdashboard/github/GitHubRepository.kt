@@ -3,6 +3,7 @@ package com.agentroost.gitdashboard.github
 import com.agentroost.gitdashboard.domain.model.ContentEntry
 import com.agentroost.gitdashboard.domain.model.FilePreview
 import com.agentroost.gitdashboard.domain.model.GitHubUser
+import com.agentroost.gitdashboard.domain.model.RepoImage
 import com.agentroost.gitdashboard.domain.model.Repository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -136,6 +137,36 @@ class GitHubRepository(
 
                     // The viewer is only reached from a file row; a directory here means a stale
                     // link or a path that changed between listing and tap.
+                    is ContentsPayload.Listing -> throw SerializationException("Expected a file at /$path")
+                }
+            }
+        }
+    }
+
+    /**
+     * Same endpoint/encoding as [filePreview], but returns the raw image bytes.
+     *
+     * Images referenced by a README are fetched through the contents API so a private repository's
+     * screenshots work with the stored token. The result is typed rather than thrown: large,
+     * non-base64, truncated or non-file payloads become [RepoImage.Unavailable].
+     *
+     * @param path repository-relative path, not URL-encoded.
+     * @param ref branch/tag/commit; null uses the repository default branch.
+     */
+    suspend fun imageBytes(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String? = null,
+    ): ApiResult<RepoImage> {
+        val encodedPath = encodeContentPath(path)
+        return when (val response = safeApiCall { api.getContents(owner, repo, encodedPath, ref) }) {
+            is ApiResult.Failure -> response
+            is ApiResult.Success -> decodeContents(response) { payload ->
+                when (payload) {
+                    is ContentsPayload.Single -> GitHubContentDecoder.decodeBinary(payload.item)
+
+                    // A README image path that turns out to be a directory is a broken reference.
                     is ContentsPayload.Listing -> throw SerializationException("Expected a file at /$path")
                 }
             }

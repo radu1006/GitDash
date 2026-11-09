@@ -1,13 +1,14 @@
 package com.agentroost.gitdashboard.ui.code
 
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontFamily
+import com.agentroost.gitdashboard.ui.theme.CodePalette
+import com.agentroost.gitdashboard.ui.theme.CodePaletteDark
+import com.agentroost.gitdashboard.ui.theme.MonospaceTextStyle
 import java.util.Locale
 
 /** Languages with a local, token-based highlighter. */
@@ -47,34 +48,61 @@ enum class CodeLanguage {
 }
 
 /**
- * Fixed palette for the code viewer.
+ * Canonical code-viewer palette.
  *
- * The viewer always paints code on [Background] (a GitHub-dark surface) so the token colours can be
- * resolved when the text is tokenised, off the main thread, instead of threading the Material theme
- * into the ViewModel. The surface stays a dark "code block" in both app themes.
+ * The viewer always paints code on a code surface so the token colours can be resolved when the
+ * text is tokenised, off the main thread, instead of threading the Material theme into the
+ * ViewModel. [CodePaletteDark] is the highlighter palette; the viewer remaps it to
+ * [CodePaletteLight] on the light theme. Every colour lives in `ui/theme/Color.kt`.
  */
 object CodeTheme {
-    val Background = Color(0xFF0D1117)
-    val Text = Color(0xFFE6EDF3)
-    val Gutter = Color(0xFF6E7681)
-    internal val Keyword = Color(0xFFFF7B72)
-    internal val StringLiteral = Color(0xFFA5D6FF)
-    internal val Comment = Color(0xFF8B949E)
-    internal val Number = Color(0xFF79C0FF)
-    internal val Property = Color(0xFF7EE787)
-    internal val Annotation = Color(0xFFD2A8FF)
-    internal val Tag = Color(0xFF7EE787)
-    internal val Attribute = Color(0xFF79C0FF)
-    internal val Heading = Color(0xFFFFA657)
+    private val palette = CodePaletteDark
+    val Background = palette.background
+    val Text = palette.text
+    val Gutter = palette.gutterText
+    internal val Keyword = palette.keyword
+    internal val StringLiteral = palette.stringLiteral
+    internal val Comment = palette.comment
+    internal val Number = palette.number
+    internal val Property = palette.property
+    internal val Annotation = palette.annotation
+    internal val Tag = palette.tag
+    internal val Attribute = palette.attribute
+    internal val Heading = palette.heading
 }
 
 /** Shared monospace style: no wrapping and a fixed line height so the gutter stays aligned. */
-val CodeTextStyle: TextStyle = TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontSize = 12.sp,
-    lineHeight = 18.sp,
-    color = CodeTheme.Text,
-)
+val CodeTextStyle: TextStyle = MonospaceTextStyle.copy(fontSize = 12.sp, lineHeight = 18.sp)
+
+/**
+ * Remaps the highlighter's canonical span colours onto [to] without re-tokenising the file, so the
+ * code surface follows the active light/dark theme.
+ */
+internal fun AnnotatedString.recolored(from: CodePalette, to: CodePalette): AnnotatedString {
+    if (from == to) return this
+    val mapping = mapOf(
+        from.keyword to to.keyword,
+        from.stringLiteral to to.stringLiteral,
+        from.comment to to.comment,
+        from.number to to.number,
+        from.property to to.property,
+        from.annotation to to.annotation,
+        from.tag to to.tag,
+        from.attribute to to.attribute,
+        from.heading to to.heading,
+    )
+    return AnnotatedString(
+        text = text,
+        spanStyles = spanStyles.map { range ->
+            AnnotatedString.Range(
+                item = range.item.copy(color = mapping[range.item.color] ?: range.item.color),
+                start = range.start,
+                end = range.end,
+            )
+        },
+        paragraphStyles = paragraphStyles,
+    )
+}
 
 /**
  * Result of highlighting a file: the styled text, the gutter contents and the line count.

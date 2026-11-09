@@ -1,6 +1,7 @@
 package com.agentroost.gitdashboard.ui.repos
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -236,37 +239,60 @@ private fun RepoListContent(
 
 @Composable
 private fun RepoRow(repository: Repository, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
             .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = repository.name,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (repository.isPrivate) {
-                SurfaceBadge(text = stringResource(R.string.repos_private))
-                Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = repository.initials,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = repository.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.repos_updated,
+                        relativeTime(repository.updatedAt),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Icon(
                 imageVector = Icons.Filled.Star,
                 contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(15.dp),
+                tint = MaterialTheme.colorScheme.tertiary,
             )
-            Spacer(Modifier.width(2.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
                 text = stringResource(R.string.repos_stars, repository.stars),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -282,47 +308,78 @@ private fun RepoRow(repository: Repository, onClick: () -> Unit) {
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = repository.owner,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = " · ",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            LanguageDot(language = repository.language)
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = repository.language ?: stringResource(R.string.repos_unknown_language),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = " · ",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(R.string.repos_updated, relativeTime(repository.updatedAt)),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (repository.isPrivate) {
+                RepoPill(
+                    text = stringResource(R.string.repos_private),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            if (repository.isFork) {
+                RepoPill(
+                    text = stringResource(R.string.repo_detail_fork),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+            if (repository.isArchived) {
+                RepoPill(
+                    text = stringResource(R.string.repo_detail_archived),
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
         }
     }
 }
 
+/** Small colour cue next to the language name; mapped to theme roles, never a raw literal. */
 @Composable
-private fun SurfaceBadge(text: String) {
+private fun LanguageDot(language: String?) {
     Box(
         modifier = Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(languageAccent(language)),
+    )
+}
+
+@Composable
+private fun languageAccent(language: String?) = when (language?.lowercase()) {
+    "kotlin", "swift" -> MaterialTheme.colorScheme.primary
+    "java", "c", "c++", "c#", "shell" -> MaterialTheme.colorScheme.tertiary
+    "javascript", "typescript", "html", "css" -> MaterialTheme.colorScheme.secondary
+    "python", "ruby", "go", "rust" -> MaterialTheme.colorScheme.primary
+    else -> MaterialTheme.colorScheme.outline
+}
+
+@Composable
+private fun RepoPill(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    Box(
+        modifier = Modifier
+            .padding(start = 6.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(containerColor)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = contentColor,
         )
     }
 }

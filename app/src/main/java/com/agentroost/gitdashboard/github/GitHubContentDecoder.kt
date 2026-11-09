@@ -2,6 +2,7 @@ package com.agentroost.gitdashboard.github
 
 import com.agentroost.gitdashboard.domain.model.FileBody
 import com.agentroost.gitdashboard.domain.model.PreviewUnavailableReason
+import com.agentroost.gitdashboard.domain.model.RepoImage
 import com.agentroost.gitdashboard.github.model.ContentDto
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -80,9 +81,12 @@ object GitHubContentDecoder {
             }
         }
 
-        // GitHub wraps base64 at 60 characters; the MIME decoder ignores the newlines for us.
+        // GitHub wraps base64 at 60 characters. Tolerate only the whitespace that wrapping adds,
+        // then decode strictly: the MIME decoder silently skips every character outside the
+        // alphabet, so garbage input would decode to 0 bytes and be misreported as TRUNCATED.
+        val compact = base64.filterNot { it.isWhitespace() }
         val bytes = try {
-            Base64.getMimeDecoder().decode(base64)
+            Base64.getDecoder().decode(compact)
         } catch (exception: IllegalArgumentException) {
             return FileBody.Unavailable(PreviewUnavailableReason.DECODE_FAILED)
         }
@@ -106,6 +110,50 @@ object GitHubContentDecoder {
         }
 
         return FileBody.Text(text.removePrefix("\uFEFF"))
+    }
+
+    /**
+     * Decodes a single file entry as raw bytes for the README image loader.
+     *
+     * This is the binary sibling of [decodeFile]: it reuses the same size/encoding/truncation
+     * guards but deliberately skips the `looksBinary` and UTF-8 checks, because a PNG is expected
+     * to look binary. Never throws; every failure becomes [RepoImage.Unavailable].
+     */
+    fun decodeBinary(dto: ContentDto): RepoImage {
+        val apiType = dto.type?.lowercase()
+        if (apiType != null && apiType != "file") {
+            return RepoImage.Unavailable(PreviewUnavailableReason.NOT_A_FILE)
+        }
+        if (dto.size > MAX_INLINE_BYTES) {
+            return RepoImage.Unavailable(PreviewUnavailableReason.TOO_LARGE)
+        }
+        if (!dto.encoding.equals(BASE64, ignoreCase = true)) {
+            return RepoImage.Unavailable(PreviewUnavailableReason.NOT_BASE64)
+        }
+
+        val base64 = dto.content.orEmpty()
+        if (base64.isBlank()) {
+            return if (dto.size == 0L) {
+                RepoImage.Bytes(ByteArray(0))
+            } else {
+                RepoImage.Unavailable(PreviewUnavailableReason.NOT_BASE64)
+            }
+        }
+
+        // Same contract as decodeFile: tolerate only the whitespace GitHub's wrapping adds, then
+        // decode strictly. The MIME decoder skips every character outside the alphabet, so garbage
+        // input would decode to 0 bytes and be misreported as TRUNCATED (or as an empty image).
+        val compact = base64.filterNot { it.isWhitespace() }
+        val bytes = try {
+            Base64.getDecoder().decode(compact)
+        } catch (exception: IllegalArgumentException) {
+            return RepoImage.Unavailable(PreviewUnavailableReason.DECODE_FAILED)
+        }
+
+        if (dto.size > 0 && bytes.size.toLong() != dto.size) {
+            return RepoImage.Unavailable(PreviewUnavailableReason.TRUNCATED)
+        }
+        return RepoImage.Bytes(bytes)
     }
 
     /**

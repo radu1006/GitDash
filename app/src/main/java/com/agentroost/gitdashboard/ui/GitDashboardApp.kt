@@ -13,20 +13,36 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.agentroost.gitdashboard.di.AppContainer
+import com.agentroost.gitdashboard.ui.browser.BrowseScreen
+import com.agentroost.gitdashboard.ui.code.CodeViewerScreen
 import com.agentroost.gitdashboard.ui.components.LoadingPane
+import com.agentroost.gitdashboard.ui.readme.ReadmeScreen
 import com.agentroost.gitdashboard.ui.repo.RepoDetailScreen
 import com.agentroost.gitdashboard.ui.repos.RepoListScreen
 import com.agentroost.gitdashboard.ui.token.TokenScreen
 import android.net.Uri
 
-/** Route names for the authenticated graph. Ticket 2 adds detail/browser routes here. */
+/** Route names for the authenticated graph. */
 object Routes {
     const val REPOS = "repos"
     const val SETTINGS = "settings"
     const val REPO_DETAIL = "repos/{owner}/{repo}"
+    const val BROWSE = "repos/{owner}/{repo}/browse?path={path}"
+    const val CODE = "repos/{owner}/{repo}/code?path={path}"
+    const val README = "repos/{owner}/{repo}/readme"
 
     fun repoDetail(owner: String, repo: String): String =
         "repos/${Uri.encode(owner)}/${Uri.encode(repo)}"
+
+    /** [path] is repository-relative and `""` for the root. */
+    fun browse(owner: String, repo: String, path: String = ""): String =
+        "repos/${Uri.encode(owner)}/${Uri.encode(repo)}/browse?path=${Uri.encode(path)}"
+
+    fun code(owner: String, repo: String, path: String): String =
+        "repos/${Uri.encode(owner)}/${Uri.encode(repo)}/code?path=${Uri.encode(path)}"
+
+    fun readme(owner: String, repo: String): String =
+        "repos/${Uri.encode(owner)}/${Uri.encode(repo)}/readme"
 }
 
 @Composable
@@ -80,14 +96,81 @@ private fun AuthenticatedNavHost(
                 navArgument("repo") { type = NavType.StringType },
             ),
         ) { entry ->
+            val owner = entry.arguments?.getString("owner").orEmpty()
+            val repo = entry.arguments?.getString("repo").orEmpty()
+
             RepoDetailScreen(
+                container = container,
+                owner = owner,
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onBrowse = { repository ->
+                    navController.navigate(Routes.browse(repository.owner, repository.name))
+                },
+                onViewReadme = { navController.navigate(Routes.readme(owner, repo)) },
+                onAuthRequired = onSessionExpired,
+            )
+        }
+
+        composable(
+            route = Routes.BROWSE,
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+                navArgument("path") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
+            val owner = entry.arguments?.getString("owner").orEmpty()
+            val repo = entry.arguments?.getString("repo").orEmpty()
+
+            BrowseScreen(
+                container = container,
+                owner = owner,
+                repo = repo,
+                initialPath = entry.arguments?.getString("path").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenFile = { path -> navController.navigate(Routes.code(owner, repo, path)) },
+                onOpenReadme = { navController.navigate(Routes.readme(owner, repo)) },
+                onAuthRequired = onSessionExpired,
+            )
+        }
+
+        composable(
+            route = Routes.README,
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            ReadmeScreen(
                 container = container,
                 owner = entry.arguments?.getString("owner").orEmpty(),
                 repo = entry.arguments?.getString("repo").orEmpty(),
                 onBack = { navController.popBackStack() },
-                // QA note: the file browser / code viewer screens are missing from the workspace,
-                // so this callback has no destination yet (see QA_REPORT.md, defect D-1).
-                onBrowse = {},
+                onAuthRequired = onSessionExpired,
+            )
+        }
+
+        composable(
+            route = Routes.CODE,
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+                navArgument("path") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
+            CodeViewerScreen(
+                container = container,
+                owner = entry.arguments?.getString("owner").orEmpty(),
+                repo = entry.arguments?.getString("repo").orEmpty(),
+                path = entry.arguments?.getString("path").orEmpty(),
+                onBack = { navController.popBackStack() },
                 onAuthRequired = onSessionExpired,
             )
         }

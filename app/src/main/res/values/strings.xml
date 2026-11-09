@@ -41,12 +41,42 @@
     <string name="repo_detail_language">Language</string>
     <string name="repo_detail_updated">Updated</string>
     <string name="repo_detail_browse">Browse files</string>
+    <string name="repo_detail_readme">View README</string>
     <string name="repo_detail_stars">Stars</string>
     <string name="repo_detail_forks">Forks</string>
     <string name="repo_detail_watchers">Watchers</string>
     <string name="repo_detail_public">Public</string>
     <string name="repo_detail_internal">Internal</string>
     <string name="repo_detail_private">Private</string>
+
+    <!-- File browser -->
+    <string name="browse_up">Go to parent folder</string>
+    <string name="browse_path_root">/</string>
+    <string name="browse_path">/%1$s</string>
+    <string name="browse_symlink">Symlink</string>
+    <string name="browse_submodule">Submodule</string>
+    <string name="browse_empty_title">Empty folder</string>
+    <string name="browse_empty_body">There are no files or folders here.</string>
+
+    <!-- Code viewer -->
+    <string name="code_title">File</string>
+    <string name="code_preview_unavailable_title">Preview unavailable</string>
+    <string name="code_preview_too_large">This file is larger than 1 MB, so GitHub does not return its contents.</string>
+    <string name="code_preview_too_large_to_render">This file is too large to display in the app.</string>
+    <string name="code_preview_not_base64">GitHub did not return the contents of this file in a readable format.</string>
+    <string name="code_preview_binary">This file contains binary data, so there is no text to display.</string>
+    <string name="code_preview_truncated">GitHub returned an incomplete copy of this file, so it is not displayed.</string>
+    <string name="code_preview_decode_failed">The file contents could not be decoded.</string>
+    <string name="code_preview_not_a_file">This path is not a regular file.</string>
+
+    <!-- README viewer -->
+    <string name="readme_title">README</string>
+    <string name="readme_no_readme_title">No README</string>
+    <string name="readme_empty_repository_body">This repository is empty, or its root cannot be read.</string>
+    <string name="readme_no_readme_body">This repository has no README.md or README.markdown at its root.</string>
+    <string name="readme_unavailable_title">README unavailable</string>
+    <string name="readme_image_unavailable">Image unavailable</string>
+    <string name="readme_image_open">Tap to open</string>
 
     <!-- Shared actions / states -->
     <string name="action_retry">Retry</string>

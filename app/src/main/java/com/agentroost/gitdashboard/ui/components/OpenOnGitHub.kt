@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,16 +46,29 @@ fun OpenOnGitHubButton(
     url: String?,
     modifier: Modifier = Modifier,
     label: String = stringResource(R.string.action_open_github),
+    outlined: Boolean = false,
 ) {
     if (url.isNullOrBlank()) return
     val open = rememberUrlOpener()
-    TextButton(onClick = { open(url) }, modifier = modifier) {
-        Icon(
-            imageVector = Icons.Filled.ExitToApp,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(label)
+    if (outlined) {
+        OutlinedButton(onClick = { open(url) }, modifier = modifier) {
+            Icon(
+                imageVector = Icons.Filled.ExitToApp,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(label)
+        }
+    } else {
+        TextButton(onClick = { open(url) }, modifier = modifier) {
+            Icon(
+                imageVector = Icons.Filled.ExitToApp,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(label)
+        }
     }
 }

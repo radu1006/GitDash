@@ -73,6 +73,23 @@ sealed interface FileBody {
 }
 
 /**
+ * Raw bytes of an image loaded through the authenticated contents endpoint.
+ *
+ * Unlike [FileBody] there is no binary/UTF-8 check: bytes are exactly what GitHub returned, so the
+ * UI can hand them to a decoder.
+ */
+sealed interface RepoImage {
+    data class Bytes(val bytes: ByteArray) : RepoImage {
+        override fun equals(other: Any?): Boolean =
+            this === other || (other is Bytes && bytes.contentEquals(other.bytes))
+
+        override fun hashCode(): Int = bytes.contentHashCode()
+    }
+
+    data class Unavailable(val reason: PreviewUnavailableReason) : RepoImage
+}
+
+/**
  * A single file from the contents API, with its content already decoded off the main thread.
  * [githubHtmlUrl] is always the web (blob) URL used by the "Open on GitHub" action.
  */
