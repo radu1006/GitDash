@@ -1,23 +1,26 @@
 # Git Dashboard
 
 An Android app for browsing your GitHub repositories from a phone: sign in with a personal access
-token, list and filter your repositories, and open a repository's details.
+token, list and filter your repositories, open a repository's details, and browse its files with a
+read-only code viewer.
 
 - **Package / application ID:** `com.agentroost.gitdashboard`
 - **Version:** `0.1.0` (versionCode 1)
 - **UI:** Jetpack Compose (Material 3)
 - **Source root:** `app/src/main/java/com/agentroost/gitdashboard/`
 
-> **Status note:** the repository list and repository detail screens are wired up. The in-app file
-> browser / code viewer is **not** wired to navigation yet — see
-> [Known limitations](#known-limitations).
+> **Status note:** the repository list, repository detail, file browser, code viewer and README
+> viewer screens are all wired into navigation. Known gaps (branch switching, pull-to-refresh, …)
+> are listed under [Known limitations](#known-limitations).
 
 ---
 
 ## Screenshots
 
-No screenshots are committed yet. Drop the files below into `docs/screenshots/` and replace the
-placeholder cells; the table is the checklist of shots a release should have.
+No screenshots are committed yet — `docs/screenshots/` contains only its own README. Drop the files
+below into that directory and replace the placeholder cells; the table is the checklist of shots a
+release should have. The last three rows are for screens that now exist but whose screenshots are
+still **pending**.
 
 | Screen | File | What to capture |
 | --- | --- | --- |
@@ -28,6 +31,9 @@ placeholder cells; the table is the checklist of shots a release should have.
 | Repository detail | `docs/screenshots/05-repo-detail.png` | Header, stats grid, "Browse files" / "Open on GitHub" |
 | Settings / sign out | `docs/screenshots/06-settings.png` | Masked saved token + "Remove saved token" |
 | Error state | `docs/screenshots/07-error.png` | Rate-limit or network error pane |
+| File browser (**pending**) | `docs/screenshots/08-file-browser.png` | Path bar, folder/file rows, file sizes, "Open on GitHub" |
+| Code viewer (**pending**) | `docs/screenshots/09-code-viewer.png` | Highlighted file with line-number gutter, Open-on-GitHub action |
+| README viewer (**pending**) | `docs/screenshots/10-readme-viewer.png` | Rendered headings, list, code block and an embedded screenshot |
 
 ---
 
@@ -209,9 +215,73 @@ Tap a row → `GET /repos/{owner}/{repo}` is loaded once.
 - Header: name, owner, visibility badge, Fork / Archived badges, description.
 - Stats: stars, forks, watchers. Then default branch, language, last-updated.
 - **Refresh** in the top bar re-runs the request.
+- **Browse files** opens the file browser at the repository root (see below).
+- **View README** opens the repository's README in the markdown viewer (see below).
 - **Open on GitHub** opens the repository's `html_url` in your browser.
 
-### 4. Settings / signing out
+### 4. Browsing a repository's files
+
+**Browse files** on the detail screen opens the file browser at the repository root. It calls
+`GET /repos/{owner}/{repo}/contents/{path}` with the default branch (no `ref` parameter).
+
+- Rows are sorted folders first, then case-insensitively by name.
+- Folder rows open that folder; file rows show their size and open the code viewer.
+- Symlink and submodule rows are labelled and are **not** tappable, so they are never treated as
+  folders.
+- The bar under the top bar shows the current path (monospace, `/` at the root), an **up** arrow
+  that is disabled at the root, and **Open on GitHub**, which opens the current folder's
+  `github.com` tree URL in your browser.
+- **Refresh** in the top bar re-requests the current folder and keeps the listing on screen while
+  it loads.
+- Folder navigation replaces the listing in place rather than pushing a screen per folder, so one
+  **Back** press returns to the repository detail screen whichever folder you ended up in.
+
+### 5. Opening a file in the code viewer
+
+Tapping a file row opens the read-only code viewer for that path, highlighting produced on the
+device (no source is sent anywhere):
+
+- Files are shown with a line-number gutter and horizontal scrolling; long lines do not wrap.
+- Highlighting covers Kotlin, Java, JavaScript/TypeScript, Python, JSON, YAML, Markdown, XML/HTML
+  and shell by file extension; every other extension is shown as plain text.
+- The toolbar title is the file's repository-relative path. The open-in-GitHub action appears once
+  the file has loaded and hands the file's `github.com` blob URL to your browser.
+- If the file cannot be shown, a **Preview unavailable** pane explains why and offers **Open on
+  GitHub** instead. The cases are: larger than 1 MB (GitHub does not return contents inline), too
+  large to render in the app (over 200,000 characters), not returned as base64 (e.g. Git LFS
+  pointers), binary content, a payload shorter than its reported size, undecodable base64, or a
+  path that is not a regular file.
+- A failed request shows the shared error pane with **Retry**; a 401 signs you out exactly as on
+  the other screens.
+
+### 6. Viewing a README
+
+**View README** on the detail screen, or tapping a root-level `README.md` / `README.markdown` in
+the file browser, opens the markdown viewer. It lists the repository root with
+`GET /repos/{owner}/{repo}/contents/`, picks the README case-insensitively (preferring `.md`), and
+loads its text from the same endpoint. Everything is read from the repository's **default branch**
+(no `ref` parameter), and there is no branch switcher on this screen.
+
+- Headings, paragraphs, bold/italic, inline code, bullet and ordered lists, blockquotes, horizontal
+  rules and fenced code blocks are rendered with Material 3 typography; code blocks use the
+  app's code palette. Text is selectable and scrolls as one list. Markdown pipe tables and raw HTML
+  keep only their text content (see [Known limitations](#known-limitations)).
+- Links open in your browser, exactly as written in the markdown.
+- Screenshots render full-width with rounded corners. A repository-relative `![alt](path)` is
+  resolved against the README's directory and fetched from `api.github.com` **with your token**
+  through the contents API, so images in private repositories work; an absolute `http(s)` URL is
+  fetched with a plain request that carries **no** token. Bitmaps are downscaled to at most
+  ~1440 px wide and cached in memory.
+- An image that cannot be shown — GitHub will not inline it (over 1 MB), it is a non-bitmap format
+  such as SVG, or the request fails — is replaced by an inline placeholder showing its alt text and
+  **Tap to open**, which opens the image's web URL (its `github.com` blob URL for a repository path,
+  the URL itself for an absolute one).
+- The toolbar shows the README's path, **Refresh**, and **Open on GitHub** (the README's blob URL).
+- Missing README (no such file, or an empty repository) shows an explanatory empty state. A README
+  GitHub will not inline (larger than 1 MB, binary or LFS) shows the reason plus **Open on GitHub**.
+  A failed request shows the shared error pane with **Retry**; a 401 signs you out.
+
+### 7. Settings / signing out
 
 Gear icon on the repository list → **Settings**:
 
@@ -224,8 +294,9 @@ Gear icon on the repository list → **Settings**:
 
 ## Architecture
 
-One OkHttp client per process, a single Retrofit interface, and a manually constructed dependency
-container (`di/AppContainer.kt` — no Hilt/Koin).
+One authenticated OkHttp client per process, a single Retrofit interface, and a manually constructed
+dependency container (`di/AppContainer.kt` — no Hilt/Koin). A second, interceptor-free client exists
+only for absolute README image URLs (see [Privacy](#privacy)).
 
 ```
 UI (Compose)  ->  ViewModel  ->  Repository  ->  GitHubApi (Retrofit)  ->  OkHttp  ->  api.github.com
@@ -237,9 +308,9 @@ UI (Compose)  ->  ViewModel  ->  Repository  ->  GitHubApi (Retrofit)  ->  OkHtt
 
 ```mermaid
 flowchart TD
-    MAIN["MainActivity.kt<br/>creates/starts Compose"] --> APP["ui/GitDashboardApp.kt<br/>NavHost: repos · repos/{owner}/{repo} · settings"]
-    APP --> SCR["Compose screens<br/>ui/token · ui/repos · ui/repo"]
-    SCR --> VM["ViewModels<br/>AppViewModel · TokenViewModel<br/>RepoListViewModel · RepoDetailViewModel"]
+    MAIN["MainActivity.kt<br/>creates/starts Compose"] --> APP["ui/GitDashboardApp.kt<br/>NavHost: repos · repos/{owner}/{repo}<br/>· browse · code · readme · settings"]
+    APP --> SCR["Compose screens<br/>ui/token · ui/repos · ui/repo<br/>ui/browser · ui/code · ui/readme"]
+    SCR --> VM["ViewModels<br/>AppViewModel · TokenViewModel · RepoListViewModel<br/>RepoDetailViewModel · BrowseViewModel · CodeViewerViewModel<br/>ReadmeViewModel"]
     VM --> REPO["github/GitHubRepository.kt<br/>domain models, ApiResult, paging"]
     REPO --> API["github/GitHubApi.kt<br/>Retrofit interface"]
     API --> OK["OkHttp client<br/>github/GitHubApiFactory.kt"]
@@ -259,13 +330,15 @@ flowchart TD
 | --- | --- | --- |
 | Entry point | `app/src/main/java/com/agentroost/gitdashboard/MainActivity.kt`, `GitDashboardApplication.kt` | Hosts Compose; the `Application` builds `AppContainer` |
 | DI | `app/src/main/java/com/agentroost/gitdashboard/di/AppContainer.kt` | Owns the token repository, the OkHttp client, `GitHubApi`, `GitHubRepository` |
-| Navigation | `app/src/main/java/com/agentroost/gitdashboard/ui/GitDashboardApp.kt` | `Routes.REPOS`, `Routes.REPO_DETAIL`, `Routes.SETTINGS`; onboarding vs. authenticated graph |
-| UI | `ui/token/TokenScreen.kt`, `ui/repos/RepoListScreen.kt`, `ui/repo/RepoDetailScreen.kt`, `ui/components/*` | Compose screens + shared error/empty/loading panes |
-| ViewModels | `ui/AppViewModel.kt` (session), `ui/token/TokenViewModel.kt`, `ui/repos/RepoListViewModel.kt`, `ui/repo/RepoDetailViewModel.kt` | State machines; expose `StateFlow` UI state; one in-flight request at a time |
-| Repository | `github/GitHubRepository.kt` | The only API surface ViewModels see; maps DTO → domain, decodes paging |
-| Network | `github/GitHubApi.kt`, `GitHubApiFactory.kt`, `AuthInterceptor.kt`, `ApiCall.kt`, `ApiResult.kt`, `Paging.kt`, `GitHubContentDecoder.kt` | Retrofit endpoints, headers, error mapping, `Link` pagination, base64 decoding |
+| Navigation | `app/src/main/java/com/agentroost/gitdashboard/ui/GitDashboardApp.kt` | `Routes.REPOS`, `Routes.REPO_DETAIL`, `Routes.BROWSE`, `Routes.CODE`, `Routes.README`, `Routes.SETTINGS`; onboarding vs. authenticated graph |
+| UI | `ui/token/TokenScreen.kt`, `ui/repos/RepoListScreen.kt`, `ui/repo/RepoDetailScreen.kt`, `ui/browser/BrowseScreen.kt`, `ui/code/CodeViewerScreen.kt`, `ui/readme/ReadmeScreen.kt`, `ui/components/*` | Compose screens + shared error/empty/loading panes |
+| ViewModels | `ui/AppViewModel.kt` (session), `ui/token/TokenViewModel.kt`, `ui/repos/RepoListViewModel.kt`, `ui/repo/RepoDetailViewModel.kt`, `ui/browser/BrowseViewModel.kt`, `ui/code/CodeViewerViewModel.kt`, `ui/readme/ReadmeViewModel.kt` | State machines; expose `StateFlow` UI state; one in-flight request at a time |
+| README rendering | `ui/readme/MarkdownParser.kt`, `ui/readme/ReadmeImageRefs.kt`, `ui/readme/ReadmeImageLoader.kt` | Dependency-free markdown blocks, image-source resolution, authenticated/plain image fetching with bitmap downscaling |
+| Repository | `github/GitHubRepository.kt` | The only API surface ViewModels see; maps DTO → domain, decodes paging and contents |
+| Network | `github/GitHubApi.kt`, `GitHubApiFactory.kt`, `AuthInterceptor.kt`, `ApiCall.kt`, `ApiResult.kt`, `Paging.kt`, `GitHubContentDecoder.kt`, `GitHubUrls.kt` | Retrofit endpoints, headers, error mapping, `Link` pagination, base64 decoding, path encoding and web URLs |
 | Wire models | `github/model/GitHubDtos.kt` | `@Serializable` DTOs |
 | Domain models | `domain/model/Repository.kt`, `domain/model/Contents.kt` | What the UI renders |
+| Syntax highlighting | `ui/code/CodeHighlighter.kt` | Extension → language mapping, token styling, line numbers (dependency-free) |
 | Token storage | `data/auth/TokenRepository.kt` | `EncryptedSharedPreferences` (`git_dashboard_secure_tokens`, key `github_pat`), AES-256-GCM master key in the Keystore |
 
 ### Error handling
@@ -301,7 +374,10 @@ clock time.
 | Build: *"SDK location not found"* / *"Failed to install the following Android SDK packages"* | No `ANDROID_HOME`, no `local.properties`, or platform 35 / build-tools missing | Install **Android SDK Platform 35** and **Build-Tools 35.0.0**, then set `ANDROID_HOME` or add `sdk.dir=…` to `local.properties` (see above). |
 | Build: `./gradlew: No such file or directory`, or *"Could not find or load main class org.gradle.wrapper.GradleWrapperMain"* (wrapper jar missing) | The wrapper files were deleted, or the checkout came from an archive that dropped them | Restore them from version control (`git checkout -- gradlew gradlew.bat gradle/wrapper`), or regenerate with any local Gradle 8.9: `gradle wrapper --gradle-version 8.9`. The wrapper jar is committed and must stay tracked. |
 | Build fails with an unsupported class file / language level error | Gradle picked a JDK other than 17 | Set *Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK* to **17**, or `JAVA_HOME` to a JDK 17 for CLI builds. |
-| **Browse files** on the detail screen does nothing | Known limitation: the button's `onBrowse` callback has no destination in the navigation graph in this workspace | Use **Open on GitHub** for now; see [Known limitations](#known-limitations). |
+| **Browse files** shows an empty folder at the repository root | GitHub answers 404 for the root of a repository with no commits, and the browser renders that as an empty folder | Push at least one commit to the default branch. A 404 for a folder *inside* the repository is shown as an error instead. |
+| A file opens a **Preview unavailable** pane: *"larger than 1 MB"* or *"too large to display in the app"* | GitHub returns at most 1 MB of contents inline, and the viewer refuses text above 200,000 characters to avoid freezing the UI | Use **Open on GitHub** from that pane; the file is not downloadable inside the app. |
+| A README screenshot shows **Image unavailable** | The image is above GitHub's 1 MB inline limit, is not a bitmap (e.g. SVG), the path is broken, or the download failed — including an absolute URL on a host the phone cannot reach | Tap the placeholder to open the image's web URL. For a repository image, commit a PNG/JPEG/WebP/GIF below 1 MB; for an external URL, check that the phone's browser can load it. |
+| Files you expect are missing from the browser | The browser reads the repository's **default branch** only — there is no branch/ref switcher yet, and the README viewer has none either | Change the default branch on GitHub. **Open on GitHub** also lands on the default branch; switch branch there. |
 
 ---
 
@@ -313,16 +389,18 @@ The token is the only secret the app handles, and it stays on the device:
   an AES-256-GCM master key held by the **Android Keystore**. If that storage is unavailable, the app
   refuses to save anything rather than writing plaintext.
 - **In transit:** sent only to `https://api.github.com`, as an `Authorization: Bearer <token>` header.
-  No other host is contacted by the network layer; cleartext traffic is disabled
-  (`usesCleartextTraffic="false"`).
+  The GitHub API client contacts no other host; cleartext traffic is disabled
+  (`usesCleartextTraffic="false"`). README images follow the same rule: a repository-relative image
+  path is downloaded from `https://api.github.com` with the token, while an absolute `http(s)` image
+  URL is downloaded by a separate interceptor-free client, so that host never sees the token.
 - **Not logged:** no OkHttp logging interceptor is installed and the token repository logs only the
   exception class name on failure — never the token or Keystore payload.
 - **Not backed up:** `android:allowBackup="false"`, so app data (including the encrypted token) is
   excluded from Android cloud backup.
 - **No analytics or third-party SDKs:** the dependencies are AndroidX, Compose, Retrofit/OkHttp,
   kotlinx.serialization and kotlinx.coroutines.
-- The **Open on GitHub** action hands a plain `github.com` URL to your browser; no token is passed to
-  the browser.
+- The **Open on GitHub** actions (repository, current folder, single file) hand a plain `github.com`
+  URL to your browser; no token is passed to the browser.
 
 Removing the token: **Settings → Remove saved token** deletes it immediately. Uninstalling the app
 also removes it (and the Keystore key).
@@ -357,15 +435,25 @@ Developer docs: **[DEV_NOTES.md](DEV_NOTES.md)** (adding screens/endpoints, DTOs
 
 ## Known limitations
 
-- **No in-app file browser / code viewer.** `GitHubRepository.repositoryContents` and
-  `filePreview`, `GitHubContentDecoder` and `ui/code/CodeHighlighter.kt` exist, but there is no
-  screen for them and `RepoDetailScreen`'s **Browse files** button is wired to an empty callback
-  (`onBrowse = {}` in `ui/GitDashboardApp.kt`).
+- **No branch or ref switching.** `GitHubRepository.repositoryContents`, `filePreview` and
+  `imageBytes` accept a `ref`, but neither the browser, the code viewer nor the README viewer passes
+  one, so every listing, file, README and README image comes from the repository's default branch.
 - **No pull-to-refresh**; refresh is a toolbar action / list-footer button.
 - **No token refresh or OAuth**; an expired token must be replaced manually.
 - **Repository filter is client-side** over already loaded pages, not a GitHub code/repo search.
-- **No test sources are committed** in this workspace (`app/src` contains `main` only), although the
-  test dependencies are declared — see DEV_NOTES.md.
+- **The file browser loads one folder per request** (no paging). A directory is requested once; the
+  app does not page through huge directories.
+- **The code viewer only renders text** (the README viewer does render images). Archives and other
+  binaries end up in the **Preview unavailable** pane; there is no download or save action.
+- **README rendering covers a markdown subset.** GitHub pipe tables render as plain pipe-separated
+  rows, raw HTML is stripped to its text content (an `<img>` tag is not shown — only markdown
+  `![alt](src)` images are), images larger than 1 MB cannot be fetched through the contents API,
+  SVG and other non-bitmap formats fall back to the image placeholder, and animated GIFs show their
+  first frame. Relative links are handed to the browser unresolved.
+- **README images are cached in memory only.** Nothing is written to disk, so every image is
+  fetched again after the process is recreated.
+- **No instrumented tests.** `app/src/androidTest` is empty, although JVM unit tests now exist under
+  `app/src/test/` — see DEV_NOTES.md.
 
 ## License
 

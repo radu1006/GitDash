@@ -13,6 +13,9 @@ palette consistent) and commit them with these names:
 | `05-repo-detail.png` | Repository detail header, stats, actions |
 | `06-settings.png` | Settings with a masked saved token |
 | `07-error.png` | Error pane (rate limit / network) |
+| `08-file-browser.png` | File browser: path bar, folder/file rows, file sizes, "Open on GitHub" |
+| `09-code-viewer.png` | Code viewer: highlighted file with line-number gutter, Open-on-GitHub action |
+| `10-readme-viewer.png` | README viewer: rendered headings, list, code block and an embedded screenshot |
 
 Guidelines:
 

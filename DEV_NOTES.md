@@ -104,27 +104,103 @@ New files under `app/src/main/java/com/agentroost/gitdashboard/ui/issues/`:
   with a `composable(...)` entry, `navArgument`s for path parameters, and collect the auth event with
   `LaunchedEffect` → `onAuthRequired = onSessionExpired`.
 - Strings: add them to `app/src/main/res/values/strings.xml` in the matching `<!-- section -->` block.
-- Navigate to it from the existing screen's callback (`RepoDetailScreen` already receives an
-  `onBrowse`-style callback you can extend, or add a new one).
+- Navigate to it from the existing screen's callback, the way the browser is wired:
+  `RepoDetailScreen`'s `onBrowse` → `Routes.browse(owner, repo)`, and `BrowseScreen`'s `onOpenFile`
+  → `Routes.code(owner, repo, path)`.
 
 Nothing needs to be added to `MainActivity` or `AppContainer` for a screen that only reads GitHub
 data.
 
-### Already-built pieces waiting for a screen
+### Contents and README pipeline (all wired into screens)
 
-The contents/file-preview chain exists but has no destination in the navigation graph:
+| Piece | File | Consumer |
+| --- | --- | --- |
+| `repositoryContents`, `filePreview`, `imageBytes` | `github/GitHubRepository.kt` | browser, code viewer, README viewer |
+| Contents body decoding (`object` vs `array`) | `github/GitHubContentDecoder.kt` | `GitHubRepository` |
+| Base64 decode + size/binary guards | `github/GitHubContentDecoder.kt`, `domain/model/Contents.kt` | code viewer, README viewer |
+| Path encoding, web URLs | `github/GitHubUrls.kt` (`encodeContentPath`, `GitHubWebUrls`) | every screen |
+| File-type icons | `ui/components/FileIcons.kt` | file browser |
+| Syntax highlighting | `ui/code/CodeHighlighter.kt` | code viewer |
+| Markdown parsing | `ui/readme/MarkdownParser.kt` | README viewer |
+| README image source resolution | `ui/readme/ReadmeImageRefs.kt` | README viewer |
+| Authenticated/plain image fetching + bitmap decode | `ui/readme/ReadmeImageLoader.kt` | README viewer |
 
-| Piece | File |
+Navigation entry points: `RepoDetailScreen` has **Browse files** and **View README**; the root file
+browser routes a `README.md`/`README.markdown` row to the README screen and every other file to the
+code viewer.
+
+### README viewer: route, files and parser
+
+**Route.** `Routes.README = "repos/{owner}/{repo}/readme"`, built by `Routes.readme(owner, repo)`
+(`Uri.encode` on both segments) in `ui/GitDashboardApp.kt`. The `composable` entry declares `owner`
+and `repo` as `NavType.StringType` arguments and constructs
+`ReadmeScreen(container, owner, repo, onBack, onAuthRequired)`. Entry points are the **View README**
+button on `RepoDetailScreen` and a root-level README row in `BrowseScreen` (matched with
+`ReadmeFiles.isReadme`, so a nested `docs/*.md` still opens in the code viewer).
+
+**Files** (all under `app/src/main/java/com/agentroost/gitdashboard/ui/readme/`):
+
+| File | Responsibility |
 | --- | --- |
-| `repositoryContents`, `filePreview` | `github/GitHubRepository.kt` |
-| Contents body decoding (`object` vs `array`) | `github/GitHubContentDecoder.kt` |
-| Base64 decode + size/binary guards | `github/GitHubContentDecoder.kt`, `domain/model/Contents.kt` |
-| Path encoding, web URLs | `github/GitHubUrls.kt` (`encodeContentPath`, `GitHubWebUrls`) |
-| File-type icons | `ui/components/FileIcons.kt` |
-| Syntax highlighting | `ui/code/CodeHighlighter.kt` |
+| `ReadmeScreen.kt` | One `LazyColumn` over `MarkdownBlock`s, per-block renderers, image placeholder and toolbar (`Refresh`, `Open on GitHub`) |
+| `ReadmeUiState.kt` | `Loading` / `Error` / `NoReadme(NoReadmeReason)` / `Unavailable` / `Content`; `NoReadmeReason` is `EMPTY_REPOSITORY` or `NO_README` |
+| `ReadmeViewModel.kt` | Root listing → `ReadmeFiles.pick` → `filePreview`; `MAX_MARKDOWN_CHARS = 200_000`; parses on `Dispatchers.Default`; owns the lazily built `ReadmeImageLoader`; `factory(container, owner, repo)` |
+| `MarkdownParser.kt` | `MarkdownBlock` / `MarkdownSpan` models and the dependency-free parser |
+| `ReadmeImageRefs.kt` | Resolves an image `src` to `ReadmeImageSource.RepoPath` / `.Remote` / `.Unsupported` (percent-decodes, normalises `./` and `../`, clamps `..` at the repository root) |
+| `ReadmeImageLoader.kt` | `ReadmeImageFetcher` (authenticated contents API vs. an interceptor-free client), `ReadmeImageState`, `LruCache`, bitmap downscaling; constructs `plainClient()` |
 
-`RepoDetailScreen`'s **Browse files** button currently passes an empty `onBrowse = {}` in
-`ui/GitDashboardApp.kt`. Wiring a browser screen is steps 4–5 above plus replacing that lambda.
+**Parser contract.**
+
+- `MarkdownParser.parse(markdown: String): List<MarkdownBlock>` is pure and **total**: blank input
+  and malformed input both return a list, and no exception escapes (the top-level `try` degrades to
+  an empty list). Do not make it throw, and do not do I/O or image resolution inside it.
+- Block order is document order. Images are hoisted into their own `MarkdownBlock.Image` between the
+  surrounding prose so the UI can fetch them; an image inside a heading degrades to its alt text.
+  `MarkdownSpan` (plain/strong/emphasis/code/link) only ever appears inside a `Heading` or
+  `Paragraph`; list items and quotes hold nested `MarkdownBlock`s.
+- `Image.src` is stored verbatim — `ReadmeImageRefs` resolves it later against `readmePath`, so the
+  parser never needs to know the repository.
+- GitHub pipe tables and raw HTML are deliberately unsupported: a table stays paragraph text with
+  its pipes, and HTML tags are stripped to their text content (`<br>` becomes a newline).
+
+**Where to add a new block type.** Three edits, and the compiler enforces the third:
+
+1. Add the case to `sealed interface MarkdownBlock` in `MarkdownParser.kt` (data class or object,
+   with KDoc).
+2. Emit it from `parseBlocks` (or a `parse*` helper it calls) — remember `depth`, and return the
+   index of the first unconsumed line. If the construct can appear inline, handle it in
+   `parseInlinePieces` / `blocksFromInlineText` as well.
+3. Render it in `MarkdownBlockView`'s `when (block)` in `ReadmeScreen.kt`; the `when` is exhaustive
+   over the sealed interface, so an unhandled block fails compilation.
+
+Add a parser test for the new syntax first (see below), and a screenshot-table row only if the block
+is visually new.
+
+**How to add a test for the image loader.**
+
+| Entry point | File | What it covers |
+| --- | --- | --- |
+| JVM, no Android framework | `app/src/test/java/com/agentroost/gitdashboard/ui/readme/ReadmeImageLoaderTest.kt` | The URL-to-request decision, which is the token-privacy boundary |
+| Robolectric (`@Config(sdk = [35])`, `@GraphicsMode(NATIVE)`) | `…/ui/readme/ReadmeImageLoaderEdgeCaseTest.kt` | Real `BitmapFactory`/`LruCache`: decode, failure placeholders, caching, remote size ceiling |
+
+Copy the shape of `ReadmeImageLoaderTest` for a new fetch case:
+
+1. Construct the fetcher directly: `ReadmeImageFetcher(repository, owner = "octocat", repo =
+   "hello-world")`, where `repository = GitHubRepository(FakeGitHubApi())` (`testing/FakeGitHubApi.kt`).
+2. For a repository path, stub `api.onContents = { Contents.single(Contents.fileOfBytes(...)) }` and
+   assert `api.contentsRequests.single().path` — no HTTP is involved.
+3. For an absolute URL, enqueue a `MockResponse` on `MockWebServer` and assert that the recorded
+   request has **no** `Authorization` and no `X-GitHub-Api-Version` header, that its `Accept` is
+   `image/*`, and that `api.contentsRequests` stayed empty. That assertion is the regression test for
+   the privacy promise — keep it in every new remote-image test.
+4. `fetch` returns `ReadmeImageFetch.Bytes` or `.Failed(reason)`; assert the reason
+   (`NOT_SUPPORTED` / `NETWORK` / `TOO_LARGE` / `NOT_AN_IMAGE`) rather than a bitmap.
+5. To test the loader's state instead of the fetcher, build
+   `ReadmeImageLoader(fetcher, CoroutineScope(SupervisorJob() + Dispatchers.IO))`, call `load(source)`
+   and await `state(source).first { it !is ReadmeImageState.Loading }`; testing decode requires
+   Robolectric, as in the edge-case file.
+
+Run `./gradlew :app:testDebugUnitTest --tests '*ReadmeImage*'` for just these classes.
 
 ## Where DTOs go, and how to write them
 
@@ -157,8 +233,8 @@ The contents/file-preview chain exists but has no destination in the navigation 
 
 ## Tests
 
-**Current state (verified):** there are no test sources in the workspace — `app/src` contains only
-`main`. Test dependencies *are* declared in `app/build.gradle.kts`:
+**Current state:** JVM unit tests exist under `app/src/test/java/com/agentroost/gitdashboard/`;
+`app/src/androidTest` is still empty. Test dependencies are declared in `app/build.gradle.kts`:
 
 | Source set | Dependencies already declared |
 | --- | --- |
@@ -176,7 +252,7 @@ app/src/test/java/com/agentroost/gitdashboard/…       # JVM: repositories, map
 app/src/androidTest/java/com/agentroost/gitdashboard/ # instrumented: Compose UI
 ```
 
-Start with the network layer, which is designed for it:
+When adding a test, start with the network layer, which is designed for it:
 
 - `safeApiCall` / `toApiError`: drive a `MockWebServer` and assert the returned `ApiError`, e.g. a
   403 with `X-RateLimit-Remaining: 0` and `X-RateLimit-Reset` becoming `RateLimited(resetAt, …)`.
@@ -186,19 +262,38 @@ Start with the network layer, which is designed for it:
   interface, so either construct it with a fake `GitHubApi` — it takes `api` in the constructor — or
   add a small interface first).
 
+### What the suite covers
+
+| Area | Test classes |
+| --- | --- |
+| GitHub layer | `ApiErrorMappingTest`, `AuthInterceptorTest`, `GitHubContentDecoderTest`, `GitHubRepositoryContentsTest` |
+| README viewer | `MarkdownParserTest`, `MarkdownParserEdgeCaseTest`, `ReadmeImageRefsTest`, `ReadmeImageRefsEdgeCaseTest`, `ReadmeImageLoaderTest`, `ReadmeImageLoaderEdgeCaseTest`, `ReadmeViewModelTest`, `ReadmeViewModelEdgeCaseTest` |
+| Screens / ViewModels | `BrowseViewModelTest`, `CodeHighlighterTest`, `CodeViewerViewModelTest`, `RepoDetailViewModelTest`, `RepoListViewModelTest` |
+| Token storage | `TokenRepositoryTest` |
+
+Shared fixtures live in `app/src/test/java/com/agentroost/gitdashboard/testing/`:
+`FakeGitHubApi` (records `contentsRequests`, stubs `onContents`), `Contents` (DTO builders),
+`MainDispatcherRule` and `Assertions` (`assertInstanceOf`, `awaitState`).
+
+`ReadmeImageLoaderTest` and `ReadmeImageRefsTest` are plain JVM tests; the `*EdgeCaseTest` README
+classes are Robolectric tests (`@Config(sdk = [35])`, `@GraphicsMode(NATIVE)`) because they decode
+real bitmaps.
+
 ### Commands
 
 ```sh
-./gradlew :app:testDebugUnitTest          # JVM unit tests         (no test sources yet)
-./gradlew :app:test                       # all unit test variants (no test sources yet)
-./gradlew :app:connectedDebugAndroidTest  # instrumented tests     (not verified)
+./gradlew :app:testDebugUnitTest          # JVM (incl. Robolectric) unit tests
+./gradlew :app:test                       # all unit test variants
+./gradlew :app:connectedDebugAndroidTest  # instrumented tests     (no test sources; not verified)
 ```
 
 The Gradle wrapper **is committed** (`gradlew`, `gradlew.bat`,
 `gradle/wrapper/gradle-wrapper.jar`, Gradle 8.9), so these tasks run from a plain clone with a
-JDK 17+ and an Android SDK. Only `:app:assembleDebug` has actually been executed here
-(**BUILD SUCCESSFUL**, Linux/JDK 17/SDK 35); no test task has been run, because `app/src` contains
-no test sources. Android Studio's green gutter arrows work regardless of the wrapper.
+JDK 17+ and an Android SDK. Only `:app:assembleDebug` has been executed in this workspace
+(**BUILD SUCCESSFUL**, Linux/JDK 17/SDK 35). The unit-test task is **not verified**: the environment
+used for the README-viewer documentation had no JDK on `PATH` (`./gradlew` stops with
+`JAVA_HOME is not set`), so run `:app:testDebugUnitTest` before trusting the suite.
+Android Studio's green gutter arrows work regardless of the wrapper.
 
 Two caveats before relying on `connectedDebugAndroidTest`:
 
@@ -219,4 +314,7 @@ When you add, remove or rewire a screen, update in the same change:
 - `README.md` → **Usage walkthrough**, **Known limitations**, and the **Troubleshooting** table if a
   new failure mode becomes possible.
 - `README.md` → **Architecture** file table if you add a package.
-- This file → the **Already-built pieces** table if you wire the file browser.
+- This file → the **Contents and README pipeline** table if you wire or extend the file browser or
+  README viewer.
+- This file → the **README viewer** section if you change its route, the `MarkdownBlock` contract or
+  the image-fetching/privacy split.
