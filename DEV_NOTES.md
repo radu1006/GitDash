@@ -268,6 +268,7 @@ When adding a test, start with the network layer, which is designed for it:
 | --- | --- |
 | GitHub layer | `ApiErrorMappingTest`, `AuthInterceptorTest`, `GitHubContentDecoderTest`, `GitHubRepositoryContentsTest` |
 | README viewer | `MarkdownParserTest`, `MarkdownParserEdgeCaseTest`, `ReadmeImageRefsTest`, `ReadmeImageRefsEdgeCaseTest`, `ReadmeImageLoaderTest`, `ReadmeImageLoaderEdgeCaseTest`, `ReadmeViewModelTest`, `ReadmeViewModelEdgeCaseTest` |
+| README rendering | `ReadmeBodyTextStyleTest`, `ReadmeBodyTextRenderTest`, `ReadmeLinkTapTest`, `ReadmeImagePlaceholderContrastTest` |
 | Screens / ViewModels | `BrowseViewModelTest`, `CodeHighlighterTest`, `CodeViewerViewModelTest`, `RepoDetailViewModelTest`, `RepoListViewModelTest` |
 | Token storage | `TokenRepositoryTest` |
 
@@ -275,9 +276,11 @@ Shared fixtures live in `app/src/test/java/com/agentroost/gitdashboard/testing/`
 `FakeGitHubApi` (records `contentsRequests`, stubs `onContents`), `Contents` (DTO builders),
 `MainDispatcherRule` and `Assertions` (`assertInstanceOf`, `awaitState`).
 
-`ReadmeImageLoaderTest` and `ReadmeImageRefsTest` are plain JVM tests; the `*EdgeCaseTest` README
-classes are Robolectric tests (`@Config(sdk = [35])`, `@GraphicsMode(NATIVE)`) because they decode
-real bitmaps.
+`ReadmeImageLoaderTest`, `ReadmeImageRefsTest`, `ReadmeBodyTextStyleTest` and
+`ReadmeImagePlaceholderContrastTest` are plain JVM tests; the `*EdgeCaseTest` README classes are
+Robolectric tests (`@Config(sdk = [35])`, `@GraphicsMode(NATIVE)`) because they decode real bitmaps,
+and `ReadmeBodyTextRenderTest` / `ReadmeLinkTapTest` run the real composables under Robolectric so
+the laid-out style and the link tap can be observed.
 
 ### Commands
 

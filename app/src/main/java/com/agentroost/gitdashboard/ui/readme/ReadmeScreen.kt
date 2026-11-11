@@ -23,13 +23,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -307,54 +310,62 @@ private fun headingStyle(level: Int, typography: Typography): TextStyle = when (
 }
 
 @Composable
-private fun MarkdownBodyText(
+internal fun MarkdownBodyText(
     spans: List<MarkdownSpan>,
     style: TextStyle,
 ) {
     val openUrl = rememberUrlOpener()
     val linkColor = MaterialTheme.colorScheme.primary
+    val bodyColor = MaterialTheme.colorScheme.onSurface
     val palette = LocalCodePalette.current
-    val annotated = remember(spans, linkColor, palette) {
-        annotatedMarkdown(spans, linkColor, palette)
+    val annotated = remember(spans, linkColor, palette, openUrl) {
+        annotatedMarkdown(spans, linkColor, palette, openUrl)
     }
 
     SelectionContainer {
-        ClickableText(
+        // Material 3 `Text` applies its own content colour, unlike the foundation `ClickableText`;
+        // links stay clickable through their [LinkAnnotation.Clickable] listeners.
+        Text(
             text = annotated,
-            style = style,
+            style = markdownBodyTextStyle(style, bodyColor),
             modifier = Modifier.fillMaxWidth(),
-            onClick = { offset ->
-                annotated.getStringAnnotations(LINK_TAG, offset, offset)
-                    .firstOrNull()
-                    ?.let { annotation -> openUrl(annotation.item) }
-            },
         )
     }
 }
+
+/**
+ * Resolves the paint colour of markdown body text.
+ *
+ * [Typography] styles carry no colour, so foundation text falls back to black; the caller must pass
+ * the active scheme's `onSurface` so headings, paragraphs, list items and quotes stay readable.
+ */
+internal fun markdownBodyTextStyle(base: TextStyle, color: Color): TextStyle = base.copy(color = color)
 
 private fun annotatedMarkdown(
     spans: List<MarkdownSpan>,
     linkColor: Color,
     palette: CodePalette,
+    openUrl: (String) -> Unit,
 ): AnnotatedString = buildAnnotatedString {
-    appendMarkdownSpans(spans, linkColor, palette)
+    appendMarkdownSpans(spans, linkColor, palette, openUrl)
 }
 
 private fun AnnotatedString.Builder.appendMarkdownSpans(
     spans: List<MarkdownSpan>,
     linkColor: Color,
     palette: CodePalette,
+    openUrl: (String) -> Unit,
 ) {
     for (span in spans) {
         when (span) {
             is MarkdownSpan.Plain -> append(span.text)
 
             is MarkdownSpan.Strong -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                appendMarkdownSpans(span.spans, linkColor, palette)
+                appendMarkdownSpans(span.spans, linkColor, palette, openUrl)
             }
 
             is MarkdownSpan.Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                appendMarkdownSpans(span.spans, linkColor, palette)
+                appendMarkdownSpans(span.spans, linkColor, palette, openUrl)
             }
 
             is MarkdownSpan.Code -> withStyle(
@@ -367,12 +378,17 @@ private fun AnnotatedString.Builder.appendMarkdownSpans(
                 append(span.text)
             }
 
-            is MarkdownSpan.Link -> withStyle(
-                SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
+            is MarkdownSpan.Link -> withLink(
+                LinkAnnotation.Clickable(
+                    tag = span.url,
+                    linkInteractionListener = LinkInteractionListener { openUrl(span.url) },
+                ),
             ) {
-                pushStringAnnotation(tag = LINK_TAG, annotation = span.url)
-                append(span.text)
-                pop()
+                withStyle(
+                    SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
+                ) {
+                    append(span.text)
+                }
             }
         }
     }
@@ -540,12 +556,13 @@ private fun ImagePlaceholder(
     shape: RoundedCornerShape,
 ) {
     val target = webUrl.takeIf { !loading }
+    val placeholderSurface = readmeImagePlaceholderSurface(MaterialTheme.colorScheme)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(placeholderSurface)
             .clickable(enabled = target != null) {
                 if (target != null) onOpen(target)
             },
@@ -582,13 +599,24 @@ private fun ImagePlaceholder(
                     Text(
                         text = stringResource(R.string.readme_image_open),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = readmeImageOpenLabelColor(MaterialTheme.colorScheme),
                     )
                 }
             }
         }
     }
 }
+
+/** Surface the README image placeholder paints its labels on. */
+internal fun readmeImagePlaceholderSurface(scheme: ColorScheme): Color = scheme.surfaceContainerHigh
+
+/**
+ * Paint colour of the "Open image" affordance in that placeholder.
+ *
+ * `primary` reaches only 4.45:1 on the light placeholder surface, under WCAG AA for the 11sp
+ * label; `onPrimaryContainer` is the same blue family at 10.98:1 (light) and 12.82:1 (dark).
+ */
+internal fun readmeImageOpenLabelColor(scheme: ColorScheme): Color = scheme.onPrimaryContainer
 
 /** One readable message per [PreviewUnavailableReason], matching the code viewer's wording. */
 @Composable
@@ -603,8 +631,6 @@ private fun previewUnavailableMessage(reason: PreviewUnavailableReason): String 
     PreviewUnavailableReason.DECODE_FAILED -> stringResource(R.string.code_preview_decode_failed)
     PreviewUnavailableReason.NOT_A_FILE -> stringResource(R.string.code_preview_not_a_file)
 }
-
-private const val LINK_TAG = "readme-link"
 
 /** U+2022 is a symbol, not user-facing English, so it stays out of `strings.xml`. */
 private const val BULLET = "\u2022"

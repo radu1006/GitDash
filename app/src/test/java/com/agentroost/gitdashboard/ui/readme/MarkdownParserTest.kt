@@ -282,6 +282,16 @@ class MarkdownParserTest {
     }
 
     @Test
+    fun `a link label may contain nested brackets and an escaped bracket`() {
+        val blocks = parse("[a [b] \\] c](https://example.com)")
+
+        assertEquals(
+            listOf(MarkdownSpan.Link("a [b] ] c", "https://example.com")),
+            (blocks.single() as MarkdownBlock.Paragraph).spans,
+        )
+    }
+
+    @Test
     fun `a malformed link is kept as literal text`() {
         val blocks = parse("[broken](url")
 

@@ -94,6 +94,41 @@ class MarkdownParserEdgeCaseTest {
     }
 
     @Test
+    fun `a hostile run of unmatched brackets parses in about linear time`() {
+        // Each '[' (and each '[' of '![') has no closing delimiter. A per-position forward rescan
+        // makes this quadratic; the guard is generous so only the algorithmic blow-up trips it.
+        val inputs = listOf("[", "![")
+
+        for (unit in inputs) {
+            val markdown = unit.repeat(200_000 / unit.length)
+
+            val start = System.nanoTime()
+            val blocks = parse(markdown)
+            val elapsedMillis = (System.nanoTime() - start) / 1_000_000
+
+            assertEquals(markdown, paragraphText(blocks.single()))
+            assertTrue(
+                "a ${markdown.length}-char run of \"$unit\" took ${elapsedMillis}ms",
+                elapsedMillis < 1_000,
+            )
+        }
+    }
+
+    @Test
+    fun `quoted link candidates do not rescan the whole line`() {
+        // Every '[' closes and is followed by '(', and a quote later in the line forces the
+        // quote-aware paren scan for each candidate. Its bounded window keeps this linear.
+        val markdown = "[a](".repeat(50_000) + "')"
+
+        val start = System.nanoTime()
+        val blocks = parse(markdown)
+        val elapsedMillis = (System.nanoTime() - start) / 1_000_000
+
+        assertEquals(markdown, paragraphText(blocks.single()))
+        assertTrue("a ${markdown.length}-char quoted run took ${elapsedMillis}ms", elapsedMillis < 1_000)
+    }
+
+    @Test
     fun `an empty image source still becomes an image block with an empty src`() {
         val blocks = parse("![alt]()")
 

@@ -77,6 +77,14 @@ object MarkdownParser {
     private const val MAX_BLOCK_DEPTH = 20
     private const val MAX_INLINE_DEPTH = 8
 
+    /**
+     * How far the quote-aware paren scan may look. Quote characters make the closing paren depend on
+     * the start position, which no prefix index can answer, so a run of `[...](` candidates would
+     * otherwise rescan the rest of the line per candidate. A markdown destination plus title is far
+     * shorter than this; past it the link degrades to text rather than freezing the viewer.
+     */
+    private const val MAX_QUOTE_SCAN = 4096
+
     private val HEADING = Regex("""^ {0,3}(#{1,6})(?:[ \t]+(.*))?$""")
     private val CLOSING_HASHES = Regex("""[ \t]+#+[ \t]*$""")
     private val HTML_TAG = Regex("""^</?([A-Za-z][A-Za-z0-9-]*)(?:\s[^>]*)?/?>""")
@@ -405,6 +413,7 @@ object MarkdownParser {
         if (text.isEmpty()) return emptyList()
         if (depth > MAX_INLINE_DEPTH) return listOf(InlinePiece.Spans(listOf(MarkdownSpan.Plain(text))))
 
+        val delimiters = DelimiterIndex(text)
         val pieces = mutableListOf<InlinePiece>()
         val spans = mutableListOf<MarkdownSpan>()
         val plain = StringBuilder()
@@ -447,7 +456,7 @@ object MarkdownParser {
                 }
 
                 character == '!' && allowImages && index + 1 < text.length && text[index + 1] == '[' -> {
-                    val image = parseImage(text, index)
+                    val image = parseImage(text, index, delimiters)
                     if (image != null) {
                         flushSpans()
                         pieces += image.piece
@@ -459,13 +468,13 @@ object MarkdownParser {
                 }
 
                 character == '[' && allowImages -> {
-                    val linkedImage = parseLinkedImage(text, index)
+                    val linkedImage = parseLinkedImage(text, index, delimiters)
                     if (linkedImage != null) {
                         flushSpans()
                         pieces += linkedImage.piece
                         index = linkedImage.end
                     } else {
-                        val link = parseLink(text, index)
+                        val link = parseLink(text, index, delimiters)
                         if (link != null) {
                             flushPlain()
                             spans += MarkdownSpan.Link(link.text, link.url)
@@ -478,7 +487,7 @@ object MarkdownParser {
                 }
 
                 character == '[' -> {
-                    val link = parseLink(text, index)
+                    val link = parseLink(text, index, delimiters)
                     if (link != null) {
                         flushPlain()
                         spans += MarkdownSpan.Link(link.text, link.url)
@@ -589,11 +598,11 @@ object MarkdownParser {
 
     private data class LinkMatch(val text: String, val url: String, val end: Int)
 
-    private fun parseLink(text: String, start: Int): LinkMatch? {
+    private fun parseLink(text: String, start: Int, delimiters: DelimiterIndex): LinkMatch? {
         if (text[start] != '[') return null
-        val closeBracket = findClosingBracket(text, start + 1) ?: return null
+        val closeBracket = delimiters.closingBracket(start + 1) ?: return null
         if (closeBracket + 1 >= text.length || text[closeBracket + 1] != '(') return null
-        val closeParen = findClosingParen(text, closeBracket + 2) ?: return null
+        val closeParen = delimiters.closingParen(closeBracket + 2) ?: return null
 
         val destination = parseDestination(text.substring(closeBracket + 2, closeParen)) ?: return null
         if (destination.url.isBlank()) return null
@@ -608,21 +617,21 @@ object MarkdownParser {
      * so the image wins and the surrounding link is ignored; showing the badge beats showing its
      * alt text.
      */
-    private fun parseLinkedImage(text: String, start: Int): ImageMatch? {
+    private fun parseLinkedImage(text: String, start: Int, delimiters: DelimiterIndex): ImageMatch? {
         if (start + 1 >= text.length || text[start] != '[' || text[start + 1] != '!') return null
-        val image = parseImage(text, start + 1) ?: return null
+        val image = parseImage(text, start + 1, delimiters) ?: return null
         if (image.end >= text.length || text[image.end] != ']') return null
         val parenOpen = image.end + 1
         if (parenOpen >= text.length || text[parenOpen] != '(') return null
-        val closeParen = findClosingParen(text, parenOpen + 1) ?: return null
+        val closeParen = delimiters.closingParen(parenOpen + 1) ?: return null
         return ImageMatch(image.piece, closeParen + 1)
     }
 
-    private fun parseImage(text: String, start: Int): ImageMatch? {
+    private fun parseImage(text: String, start: Int, delimiters: DelimiterIndex): ImageMatch? {
         if (start + 1 >= text.length || text[start] != '!' || text[start + 1] != '[') return null
-        val closeBracket = findClosingBracket(text, start + 2) ?: return null
+        val closeBracket = delimiters.closingBracket(start + 2) ?: return null
         if (closeBracket + 1 >= text.length || text[closeBracket + 1] != '(') return null
-        val closeParen = findClosingParen(text, closeBracket + 2) ?: return null
+        val closeParen = delimiters.closingParen(closeBracket + 2) ?: return null
 
         val destination = parseDestination(text.substring(closeBracket + 2, closeParen)) ?: return null
         val alt = flattenToText(text.substring(start + 2, closeBracket))
@@ -664,43 +673,150 @@ object MarkdownParser {
         return Destination(unescape(destination), title)
     }
 
-    private fun findClosingBracket(text: String, from: Int): Int? {
-        var depth = 1
-        var index = from
-        while (index < text.length) {
-            val character = text[index]
-            when {
-                character == '\\' -> index++
-                character == '[' -> depth++
-                character == ']' -> {
-                    depth--
-                    if (depth == 0) return index
-                }
-            }
-            index++
+    /**
+     * Amortised O(1) answers for "where does the bracket/paren opened just before `from` close?".
+     *
+     * Both delimiters close at the first position where the running depth drops to zero, which is a
+     * prefix-sum query: with `balance[i]` the net opening minus closing weight of `text[0, i)`, the
+     * answer is the first index after `from` whose balance is lower than `balance[from]`. One
+     * forward pass plus a monotonic-stack reverse pass per delimiter answers every start index, so a
+     * line with thousands of unmatched openers costs linear work instead of a full rescan per opener
+     * (previously O(n^2) on hostile READMEs).
+     *
+     * Built lazily: text without a bracket or paren never pays for the arrays.
+     *
+     * The paren case has one wrinkle: quotes suspend paren counting, which a prefix sum cannot
+     * express. When the first quote comes before the indexed close, the exact scan runs instead,
+     * bounded by [MAX_QUOTE_SCAN].
+     *
+     * Both lookups assume the character just before [from] is the opening delimiter. That is also
+     * what keeps escapes consistent: a fresh scan from [from] restarts the backslash parity, which
+     * matches the index exactly when the preceding character is not a backslash.
+     */
+    private class DelimiterIndex(private val text: String) {
+
+        private val length = text.length
+        private var bracketNext: IntArray? = null
+        private var parenNext: IntArray? = null
+        private var quoteNext: IntArray? = null
+        private var lastCloseParen = -1
+        private var built = false
+
+        /** Position of the `]` closing the bracket opened just before [from], or null. */
+        fun closingBracket(from: Int): Int? {
+            if (from >= length) return null
+            ensureBuilt()
+            return closingPosition(bracketNext!!, from)
         }
-        return null
+
+        /**
+         * Position of the `)` closing the paren opened just before [from], or null.
+         *
+         * Quote characters suspend paren counting, so the prefix-sum index only answers when the
+         * quoted tail cannot matter: either the remaining text has no quote, or the index closes the
+         * paren before the first quote. Otherwise the exact quote-aware scan runs, bounded by
+         * [MAX_QUOTE_SCAN] characters so a crafted line of `[...](` candidates cannot rescan the
+         * whole document per candidate.
+         */
+        fun closingParen(from: Int): Int? {
+            if (from >= length) return null
+            ensureBuilt()
+            val firstQuote = quoteNext!![from]
+            val byIndex = closingPosition(parenNext!!, from)
+            if (firstQuote < 0) return byIndex
+            if (byIndex != null && byIndex < firstQuote) return byIndex
+            if (lastCloseParen < from) return null
+            return scanClosingParen(from)
+        }
+
+        /** Exact scan for the quote-aware case; gives up after [MAX_QUOTE_SCAN] characters. */
+        private fun scanClosingParen(from: Int): Int? {
+            var depth = 1
+            var quote: Char? = null
+            var index = from
+            val limit = minOf(length, from + MAX_QUOTE_SCAN)
+            while (index < limit) {
+                val character = text[index]
+                when {
+                    character == '\\' -> index++
+                    quote != null -> if (character == quote) quote = null
+                    character == '"' || character == '\'' -> quote = character
+                    character == '(' -> depth++
+                    character == ')' -> {
+                        depth--
+                        if (depth == 0) return index
+                    }
+                }
+                index++
+            }
+            return null
+        }
+
+        private fun closingPosition(nextSmaller: IntArray, from: Int): Int? {
+            val end = nextSmaller[from]
+            return if (end < 0) null else end - 1
+        }
+
+        private fun ensureBuilt() {
+            if (built) return
+            built = true
+
+            val bracketBalance = IntArray(length + 1)
+            val parenBalance = IntArray(length + 1)
+            val quoteFlags = BooleanArray(length)
+            var brackets = 0
+            var parens = 0
+            var escaped = false
+            for (index in 0 until length) {
+                val character = text[index]
+                if (!escaped) {
+                    when (character) {
+                        '[' -> brackets++
+                        ']' -> brackets--
+                        '(' -> parens++
+                        ')' -> {
+                            parens--
+                            lastCloseParen = index
+                        }
+
+                        '"', '\'' -> quoteFlags[index] = true
+                    }
+                }
+                escaped = when {
+                    escaped -> false
+                    character == '\\' -> true
+                    else -> false
+                }
+                bracketBalance[index + 1] = brackets
+                parenBalance[index + 1] = parens
+            }
+
+            var nextQuote = -1
+            val quotes = IntArray(length + 1)
+            for (index in length - 1 downTo 0) {
+                if (quoteFlags[index]) nextQuote = index
+                quotes[index] = nextQuote
+            }
+            quotes[length] = -1
+
+            bracketNext = nextSmallerPositions(bracketBalance)
+            parenNext = nextSmallerPositions(parenBalance)
+            quoteNext = quotes
+        }
     }
 
-    private fun findClosingParen(text: String, from: Int): Int? {
-        var depth = 1
-        var quote: Char? = null
-        var index = from
-        while (index < text.length) {
-            val character = text[index]
-            when {
-                character == '\\' -> index++
-                quote != null -> if (character == quote) quote = null
-                character == '"' || character == '\'' -> quote = character
-                character == '(' -> depth++
-                character == ')' -> {
-                    depth--
-                    if (depth == 0) return index
-                }
-            }
-            index++
+    /** For each index, the nearest later index with a strictly smaller balance, or -1. */
+    private fun nextSmallerPositions(balance: IntArray): IntArray {
+        val next = IntArray(balance.size) { -1 }
+        val stack = IntArray(balance.size)
+        var size = 0
+        for (index in balance.size - 1 downTo 0) {
+            val value = balance[index]
+            while (size > 0 && balance[stack[size - 1]] >= value) size--
+            if (size > 0) next[index] = stack[size - 1]
+            stack[size++] = index
         }
-        return null
+        return next
     }
 
     private fun flattenToText(raw: String): String {
